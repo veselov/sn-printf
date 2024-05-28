@@ -14,7 +14,7 @@ typedef struct sn_printf_ops {
     size_t (*strlen)(const char *c);
     void * (*memmove)(void * d, const void * s, size_t n);
     void * (*memset)(void * d, int c, size_t n);
-    void * (*strchr)(char const * s, int c);
+    char * (*strchr)(char const * s, int c);
 } sn_printf_ops_t;
 
 #define sn_printf_v SYM_WRAP(sn_printf_v)

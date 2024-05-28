@@ -2,6 +2,9 @@
 #include "../sn-printf.h"
 #include "test-fw.h"
 
+#include <string.h>
+#include <stdio.h>
+
 static int large_string(void);
 
 #define SIMPLE(a,b,c...) do { \
@@ -87,6 +90,21 @@ int sn_printf_test(void) {
 
 int main(int argc, char ** argv) {
 
-    return sn_printf_test();
+    int err = E_OK;
+
+    do {
+        BOLT_SUB(sn_printf_test());
+        sn_printf_ops.strchr = strchr;
+        sn_printf_ops.memset = memset;
+        sn_printf_ops.memmove = memmove;
+        sn_printf_ops.memcpy = memcpy;
+        sn_printf_ops.strlen = strlen;
+        sn_printf_ops.memchr = memchr;
+        BOLT_SUB(sn_printf_test());
+    } while (0);
+
+    printf("test result: %d\n", err);
+
+    return err;
 
 }

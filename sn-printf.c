@@ -18,7 +18,6 @@ struct ctx {
     size_t lim;
     int res;
     char const * fmt;
-
     char const * o_fmt;
 
 };
@@ -50,7 +49,97 @@ struct info {
 };
 
 sn_printf_ops_t sn_printf_ops;
-static sn_printf_ops_t * ops = &sn_printf_ops;
+
+static void* my_memchr(void const * s, int c, size_t n) {
+
+    if (sn_printf_ops.memchr) {
+        return sn_printf_ops.memchr(s, c, n);
+    }
+
+    for (size_t i = 0; i<n; i++) {
+        if (((char const*)s)[i] == c) {
+            return (void*)(s + i);
+        }
+    }
+
+    return 0;
+
+}
+
+static void * my_memcpy(void * d, void const * s, size_t n) {
+
+    if (sn_printf_ops.memcpy) {
+        return sn_printf_ops.memcpy(d, s, n);
+    }
+
+    for (size_t i=0; i<n; i++) {
+        ((unsigned char*)d)[i] = ((unsigned char const *)s)[i];
+    }
+
+    return d;
+
+}
+
+
+static size_t my_strlen(const char *c) {
+
+    if (sn_printf_ops.strlen) {
+        return sn_printf_ops.strlen(c);
+    }
+
+    for (size_t r = 0; ;r++) {
+        if (!c[r]) { return r; }
+    }
+
+}
+
+static void * my_memmove(void * d, const void * s, size_t n) {
+
+    if (sn_printf_ops.memmove) {
+        return sn_printf_ops.memmove(d, s, n);
+    }
+
+    if (d < s) {
+        return my_memcpy(d, s, n);
+    }
+
+    for (size_t i = n; i != 0; i--) {
+        ((unsigned char*)d)[i-1] = ((unsigned char const *)s)[i-1];
+    }
+
+    return d;
+
+}
+
+static void * my_memset(void * d, int c, size_t n) {
+
+    if (sn_printf_ops.memset) {
+        return sn_printf_ops.memset(d, c, n);
+    }
+
+    for (size_t i = 0; i<n; i++) {
+        ((unsigned char *)d)[i] = (unsigned char)c;
+    }
+
+    return d;
+
+}
+
+char * my_strchr(char const * s, int c) {
+
+    if (sn_printf_ops.strchr) {
+        return sn_printf_ops.strchr(s, c);
+    }
+
+    for (; *s; s++) {
+        if (*s == c) {
+            return (char*)s;
+        }
+    }
+
+    return 0;
+
+}
 
 #if WITH_UNIT_TEST
 int abort_on_test = 1;
@@ -72,7 +161,7 @@ static inline void write_data(struct ctx * ctx, char const * data, size_t len) {
             return;
         }
     }
-    ops->memcpy(ctx->out, data, len);
+    my_memcpy(ctx->out, data, len);
     ctx->out += len;
     ctx->lim -= len;
 
@@ -80,7 +169,7 @@ static inline void write_data(struct ctx * ctx, char const * data, size_t len) {
 
 static inline void write_data_z(struct ctx * ctx, char const * data) {
 
-    write_data(ctx, data, ops->strlen(data));
+    write_data(ctx, data, my_strlen(data));
 
 }
 
@@ -243,9 +332,9 @@ static int int_convert(struct ctx * ctx, struct info * info) {
         int room = info->width - len;
         if (room > 0) {
 
-            ops->memmove(ptr - room, ptr, len);
+            my_memmove(ptr - room, ptr, len);
             ptr -= room;
-            ops->memset(ptr + len, ' ', room);
+            my_memset(ptr + len, ' ', room);
             len += room;
 
         }
@@ -285,12 +374,12 @@ static int int_convert(struct ctx * ctx, struct info * info) {
 static inline size_t get_s_len(struct info * info, char const * s) {
 
     if (!info->has_precision) {
-        return ops->strlen(s);
+        return my_strlen(s);
     }
 
     if (info->precision <= 0) { return 0; }
 
-    char * z = ops->memchr(s, 0, info->precision);
+    char * z = my_memchr(s, 0, info->precision);
     if (!z) { return info->precision; }
     return z - s;
 
@@ -302,7 +391,7 @@ static void pad_string(struct ctx * ctx, struct info * info, size_t s_len) {
     while (pad > 0) {
         int f_len = pad > 2048 ? 2048 : pad;
         char n[f_len];
-        ops->memset(n, ' ', f_len);
+        my_memset(n, ' ', f_len);
         write_data(ctx, n, f_len);
         pad -= f_len;
     }
@@ -318,10 +407,10 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
             .fmt = fmt_arg,
     };
 
-    char const * e_fmt = ctx.fmt + ops->strlen(ctx.fmt);
+    char const * e_fmt = ctx.fmt + my_strlen(ctx.fmt);
     while (ctx.fmt != e_fmt) {
 
-        char const * pct = ops->strchr(ctx.fmt, '%');
+        char const * pct = my_strchr(ctx.fmt, '%');
         if (!pct) {
             write_data(&ctx, ctx.fmt, e_fmt - ctx.fmt);
             break;
@@ -460,7 +549,7 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
 
             // don't allow exuberant widths in any case.
             if (info.width >= 256) {
-                return error(&ctx, "Width too large");
+                return error(&ctx, "Width is too large");
             }
 
             // at this point, the char must be a conversion that we understand, or it's an error.
@@ -522,6 +611,7 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
                 char const * s = va_arg(ap, char const*);
 
                 if (info.mod == 'l') {
+                    // TODO: implement me
                     return error(&ctx, "wchar_t not supported");
                 }
 
@@ -531,7 +621,7 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
                         abort();
                     }
 #endif
-                    s = "(null)"; // the Linux way
+                    s = "(null)"; // the glibc way
                 }
 
                 size_t s_len = get_s_len(&info, s);
@@ -549,6 +639,7 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
 
             if (c == 'c') {
                 if (info.mod == 'l') {
+                    // TODO: implement me
                     return error(&ctx, "wint_t is not supported");
                 }
                 // TODO: OK, C is weird.
@@ -579,7 +670,7 @@ int sn_printf_v(char * out, size_t lim, char const * fmt_arg, va_list ap) {
             return error(&ctx, "Incomplete sequence");
         }
 
-    };
+    }
 
     write_data(&ctx, "", 1);
 
